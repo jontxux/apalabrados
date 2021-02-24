@@ -9,11 +9,11 @@ use Path::Tiny;
 my $palabra_almacenada = Path::Tiny->tempfile;
 my $run                = Path::Tiny->tempfile;
 $run->spew(1);
-my $todas = path('todas.txt');
-generar_diccionario() unless $todas->exists;
-$todas = $todas->slurp;
+my $nombre_fichero = "todas.txt";
+generar_diccionario($nombre_fichero) unless path($nombre_fichero)->exists;
+my $todas = path($nombre_fichero)->slurp;
 
-my $pid   = fork;
+my $pid = fork;
 if ($pid) {
 	my $vieja_palabra = "";
 	my $palabra       = "";
@@ -27,7 +27,6 @@ BASH
 		$palabra =~ s/\t|\s|\n//g;
 		$palabra = lc($palabra);
 
-		# $palabra = "prueba";
 		if ( 1 < length $palabra < 10 && $vieja_palabra ne $palabra ) {
 			$vieja_palabra = $palabra;
 			buscar_palabras( $palabra, \$todas );
@@ -51,9 +50,10 @@ else {
 				last;
 			}
 			elsif ( $input =~ /^\s/ ) {
+				$input =~ s/\s+|\t+//g;
 				buscar_palabras( $input, \$todas );
 			}
-			else {
+			elsif (length($input) > 0){
 				buscar_palabras( $palabra_almacenada->slurp . $input, \$todas );
 			}
 		}
@@ -74,28 +74,32 @@ sub buscar_palabras {
 
 	my @extraidas = $todas->$* =~ m/\b$busqueda\b/g;
 
-	my $letras_busqueda;
-	foreach my $letra ( split //, $palabra ) {
-		$letras_busqueda->{$letra}++;
-	}
-	my @definitivo;
-	foreach my $i (@extraidas) {
-		my $vale = 1;
-		foreach my $clave ( keys %{$letras_busqueda} ) {
-			my $cantidad_extraida = () = $i =~ /$clave/g;
-			if ( $cantidad_extraida > $letras_busqueda->{$clave} ) {
-				$vale = 0;
+	my $letras_busqueda =
+	  do { my %l; $l{$_}++ for @{ [ split //, $palabra ] }; \%l };
+
+	my @definitivo = grep {
+		my $ok = 1;
+		my %l  = %$letras_busqueda;
+		for my $letra ( split // ) {
+			unless ( $l{$letra}-- ) {
+				$ok = 0;
+				last;
 			}
 		}
-		push @definitivo, $i if $vale;
-	}
+		$ok;
+	} @extraidas;
+
 	@definitivo = sort { length $a <=> length $b } @definitivo;
 	say $_ . " " . length($_) for @definitivo;
 }
 
 sub generar_diccionario {
 
-	my $path        = Path::Tiny->new("prueba.txt");
+	my $nombre_fichero = shift;
+
+	say "No tiene el diccionario creado";
+
+	my $path        = Path::Tiny->new($nombre_fichero);
 	my $diccionario = qx{aspell -d es dump master | aspell -l es expand};
 	$diccionario =~ s/\s|\ŧ|\n/:/sg;
 	$diccionario =~ tr/áéíóú/aeiou/s;
@@ -104,5 +108,7 @@ sub generar_diccionario {
 	my @definitivo = map { "$_\n" } @unique;
 	@definitivo = sort { $a cmp $b } @definitivo;
 	$path->spew(@definitivo);
+
+	say "Diccionario creado";
 }
 
